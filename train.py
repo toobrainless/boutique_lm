@@ -44,16 +44,16 @@ config = {
     "nhead": 16,  # number of heads in ``nn.MultiheadAttention``
     "dropout": 0.1,  # dropout probability
     "sp_model_prefix": "bpe_2000",
-    "max_length": 512,
-    "batch_size": 80,
+    "max_length": 256,
+    "batch_size": 768,
     "lr": 3e-4,
     "weight_decay": 0,
     "epochs": 100,
     "len_epoch": 5000,
     "log_step": 100,
-    "accumulation_steps": 2,
+    "accumulation_steps": 1,
     "project": "boutique_lm",
-    "name": "test_run4",
+    "name": "test_amp",
     "save_period": 1,
 }
 
@@ -103,7 +103,7 @@ if __name__ == "__main__":
         weight_decay=config["weight_decay"],
     )
     scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
-
+    scaler = torch.cuda.amp.GradScaler()
     loader = iter(loader)
 
     step = 0
@@ -113,20 +113,28 @@ if __name__ == "__main__":
         total_loss = 0
         total_grad = 0
         for batch_idx in tqdm(range(config["len_epoch"]), desc="train"):
-            optimizer.zero_grad()
+            optimizer.zero_grad(set_to_none=True)
             for accum_step in range(config["accumulation_steps"]):
                 batch = next(loader)
                 src, tgt = batch["src"].to(device), batch["tgt"].to(device)
-                output = model(src)
-                output_flat = output.view(-1, config["vocab_size"])
-                loss = criterion(output_flat, tgt.view(-1))
+                with torch.autocast(device_type="cuda", dtype=torch.float16):
+                    with torch.backends.cuda.sdp_kernel(
+                        enable_flash=True,
+                        enable_math=False,
+                        enable_mem_efficient=False,
+                    ):
+                        output = model(src)
+                        output_flat = output.view(-1, config["vocab_size"])
+                        loss = criterion(output_flat, tgt.view(-1))
 
-                loss.backward()
+                scaler.scale(loss).backward()
                 total_loss += loss.item()
-
+            scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             total_grad += get_grad_norm(model)
-            optimizer.step()
+            # optimizer.step()
+            scaler.step(optimizer)
+            scaler.update()
 
             if (batch_idx + 1) % config["log_step"] == 0:
                 step = epoch * config["len_epoch"] + batch_idx
