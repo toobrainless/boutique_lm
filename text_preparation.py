@@ -1,6 +1,7 @@
 import json
 import os
 from pathlib import Path
+import tarfile
 from typing import Any
 
 import numpy as np
@@ -66,7 +67,24 @@ class Collator:
 
 
 if __name__ == "__main__":
+    path_to_archive = Path("TinyStories_all_data.tar.gz")
+
+    if path_to_archive.exists():
+        print(f"{path_to_archive} already exists.")
+    else:
+        print("Download TinyStories...")
+        url = "https://huggingface.co/datasets/roneneldan/TinyStories/resolve/main/TinyStories_all_data.tar.gz"
+        os.system(f'wget --quiet --show-progress "{url}"')
+
     path_to_data_folder = Path("TinyStories_all_data")
+
+    if path_to_data_folder.exists():
+        print(f"{path_to_archive} already exists.")
+    else:
+        print("Unpacking TinyStories")
+        file = tarfile.open(path_to_archive)
+        file.extractall(path_to_data_folder)
+
     merged_stories_path = Path("all_stories.txt")
 
     files = sorted(list(path_to_data_folder.glob("*.json")))
