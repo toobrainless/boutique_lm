@@ -1,7 +1,8 @@
+import argparse
 import json
 import os
-from pathlib import Path
 import tarfile
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -45,10 +46,7 @@ class Collator:
         self.pad_id = pad_id
 
     def __call__(self, batch_list) -> Any:
-        result_batch = {}
-        result_batch["src"] = []
-        result_batch["tgt"] = []
-        result_batch["story_length"] = []
+        result_batch = {"src": [], "tgt": [], "story_length": []}
 
         for elem in batch_list:
             result_batch["src"].append(elem["src"])
@@ -67,7 +65,25 @@ class Collator:
 
 
 if __name__ == "__main__":
-    path_to_archive = Path("TinyStories_all_data.tar.gz")
+    parser = argparse.ArgumentParser(description="Prepare dataset for training.")
+    parser.add_argument(
+        "--vocab_size",
+        "-vs",
+        type=int,
+        default=5000,
+        help="Vocabularity size of sentencepiece tokenizer",
+    )
+    parser.add_argument(
+        "--archive_path",
+        "-ap",
+        type=str,
+        default="TinyStories_all_data.tar.gz",
+        help="Path to TinyStories_all_data.tar.gz",
+    )
+
+    args = parser.parse_args()
+
+    path_to_archive = Path(args.archive_path)
 
     if path_to_archive.exists():
         print(f"{path_to_archive} already exists.")
@@ -102,11 +118,10 @@ if __name__ == "__main__":
                         text = story["story"].strip()
                         f.write(f"{text}\n")
 
-    vocab_size: int = 2000
+    vocab_size: int = args.vocab_size
     normalization_rule_name: str = "nmt_nfkc_cf"
     model_type: str = "bpe"
     sp_model_prefix: str = f"{model_type}_{vocab_size}"
-    max_length: int = 128
 
     desired_model_path = Path(f"{sp_model_prefix}.model")
     desired_vocab_path = Path(f"{sp_model_prefix}.vocab")
@@ -132,10 +147,6 @@ if __name__ == "__main__":
 
     encods_path = Path(f"encoded_stories_{sp_model_prefix}.npy")
     index_path = Path(f"index_{sp_model_prefix}.npy")
-
-    more_than256 = 0
-    more_than512 = 0
-    total = 0
 
     if encods_path.exists() and index_path.exists():
         print(f"{encods_path} already exists.")

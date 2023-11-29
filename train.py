@@ -1,6 +1,7 @@
 from itertools import repeat
 from pathlib import Path
 
+import pandas as pd
 import torch
 from torch import nn
 from torch.utils.data import DataLoader
@@ -36,26 +37,42 @@ def get_grad_norm(model, norm_type=2):
     return total_norm.item()
 
 
+@torch.inference_mode()
+def inference(model, sp_model, max_length=500, prompt="Once upon a time there was"):
+    from torch.distributions import Categorical
+
+    device = model.device
+
+    prompt = torch.tensor([[sp_model.bos_id()] + sp_model.encode(prompt)]).to(device)
+    for _ in range(max_length):
+        logits = model(prompt)[0, -1]
+        new_token = Categorical(logits=logits).sample().unsqueeze(0).unsqueeze(0)
+        if new_token.item() == sp_model.eos_id():
+            break
+        prompt = torch.cat([prompt, new_token], axis=1)
+    return sp_model.decode(prompt.squeeze().tolist())
+
+
 config = {
-    "vocab_size": 2000,  # size of vocabulary
-    "emsize": 128,  # embedding dimension
+    "vocab_size": 5000,  # size of vocabulary
+    "emsize": 256,  # embedding dimension
     "d_hid": 64,  # dimension of the feedforward network model in ``nn.TransformerEncoder``
     "nlayers": 8,  # number of ``nn.TransformerEncoderLayer`` in ``nn.TransformerEncoder``
     "nhead": 16,  # number of heads in ``nn.MultiheadAttention``
     "dropout": 0.1,  # dropout probability
-    "sp_model_prefix": "bpe_2000",
     "max_length": 256,
-    "batch_size": 768,
-    "lr": 3e-4,
+    "batch_size": 352,
+    "lr": 5e-4,
     "weight_decay": 0,
     "epochs": 100,
-    "len_epoch": 5000,
+    "len_epoch": 10000,
     "log_step": 100,
     "accumulation_steps": 1,
     "project": "boutique_lm",
-    "name": "test_amp",
+    "name": "test_table",
     "save_period": 1,
 }
+config["sp_model_prefix"] = f"bpe_{config['vocab_size']}"
 
 if __name__ == "__main__":
     wandb.init(
@@ -102,11 +119,10 @@ if __name__ == "__main__":
         betas=(0.9, 0.95),
         weight_decay=config["weight_decay"],
     )
-    scheduler = torch.optim.lr_scheduler.StepLR(optimizer, 1.0, gamma=0.95)
     scaler = torch.cuda.amp.GradScaler()
     loader = iter(loader)
 
-    step = 0
+    step = 1
     model.train()
     for epoch in range(config["epochs"]):
         wandb.log({"epoch": epoch}, step=step)
@@ -125,7 +141,10 @@ if __name__ == "__main__":
                     ):
                         output = model(src)
                         output_flat = output.view(-1, config["vocab_size"])
-                        loss = criterion(output_flat, tgt.view(-1))
+                        loss = (
+                            criterion(output_flat, tgt.view(-1))
+                            / config["accumulation_steps"]
+                        )
 
                 scaler.scale(loss).backward()
                 total_loss += loss.item()
@@ -137,12 +156,9 @@ if __name__ == "__main__":
             scaler.update()
 
             if (batch_idx + 1) % config["log_step"] == 0:
-                step = epoch * config["len_epoch"] + batch_idx
+                step = epoch * config["len_epoch"] + batch_idx + 1
                 wandb.log(
-                    {
-                        "loss": total_loss
-                        / (config["accumulation_steps"] * config["log_step"])
-                    },
+                    {"loss": total_loss / config["log_step"]},
                     step=step,
                 )
                 total_loss = 0
@@ -151,6 +167,24 @@ if __name__ == "__main__":
                     step=step,
                 )
                 total_grad = 0
+
+        step = (epoch + 1) * config["len_epoch"]
+        rows = {}
+        for idx, prompt in enumerate(
+            ["Hello", "Once upon a time there was", "In a land far far away"]
+        ):
+            rows[idx] = {
+                "prompt": prompt,
+                "output": inference(model, ds.sp_model, prompt=prompt),
+            }
+        wandb.log(
+            {
+                "generation": wandb.Table(
+                    dataframe=pd.DataFrame.from_dict(rows, orient="index")
+                )
+            },
+            step=step,
+        )
 
         if (epoch + 1) % config["save_period"] == 0:
             torch.save(model.state_dict(), f"checkpoint_epoch{epoch}.pt")
