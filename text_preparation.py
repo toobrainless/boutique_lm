@@ -14,12 +14,25 @@ from tqdm import tqdm
 
 
 class TokenizedDataset(Dataset):
-    def __init__(self, sp_model_prefix, max_length, encoded_stories_path, index_path):
+    def __init__(
+        self,
+        sp_model,
+        max_length,
+        encoded_stories_path,
+        index_path,
+        train=False,
+        test_size=0.05,
+    ):
         super().__init__()
-        self.sp_model = SentencePieceProcessor(model_file=sp_model_prefix + ".model")
+        self.sp_model = sp_model
         self.max_length = max_length
         self.encoded_stories = np.load(encoded_stories_path)
-        self.index = np.load(index_path)
+        _index = np.load(index_path)
+        # index was shuffled so ordely split is okey
+        if train:
+            self.index = _index[: -int(test_size * len(_index))]
+        else:
+            self.index = _index[-int(test_size * len(_index)) :]
 
     def __getitem__(self, idx):
         start, end = self.index[idx]
@@ -168,4 +181,5 @@ if __name__ == "__main__":
         index = np.array(index, dtype=np.int32)
         print(f"{len(encoded_stories)=}")
         np.save(encods_path, encoded_stories)
+        np.random.shuffle(index)
         np.save(index_path, index)

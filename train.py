@@ -3,6 +3,7 @@ from pathlib import Path
 
 import pandas as pd
 import torch
+from sentencepiece import SentencePieceProcessor
 from torch import nn
 from torch.utils.data import DataLoader
 from tqdm import tqdm
@@ -10,8 +11,6 @@ from tqdm import tqdm
 import wandb
 from model import TransformerModel
 from text_preparation import Collator, TokenizedDataset
-
-device = torch.device("cuda")
 
 
 def inf_loop(data_loader):
@@ -55,24 +54,32 @@ def inference(model, sp_model, max_length=500, prompt="Once upon a time there wa
 
 config = {
     "vocab_size": 5000,  # size of vocabulary
-    "emsize": 256,  # embedding dimension
-    "d_hid": 64,  # dimension of the feedforward network model in ``nn.TransformerEncoder``
-    "nlayers": 8,  # number of ``nn.TransformerEncoderLayer`` in ``nn.TransformerEncoder``
+    "emsize": 384,  # embedding dimension
+    "d_hid": 384,  # dimension of the feedforward network model in ``nn.TransformerEncoder``
+    "nlayers": 4,  # number of ``nn.TransformerEncoderLayer`` in ``nn.TransformerEncoder``
     "nhead": 16,  # number of heads in ``nn.MultiheadAttention``
     "dropout": 0.1,  # dropout probability
-    "max_length": 256,
-    "batch_size": 352,
+    "max_length": 512,
+    "batch_size": 160,
     "lr": 5e-4,
-    "weight_decay": 0,
+    "weight_decay": 0.1,
     "epochs": 100,
     "len_epoch": 10000,
     "log_step": 100,
-    "accumulation_steps": 1,
+    "accumulation_steps": 2,
     "project": "boutique_lm",
-    "name": "test_table",
+    "name": "Medium model, 7.5kk parameters",
     "save_period": 1,
 }
 config["sp_model_prefix"] = f"bpe_{config['vocab_size']}"
+prompts = [
+    "Once upon a time there was",
+    "In a land far far away",
+    "My name is Mariama, my favorite",
+    '"Can cows fly?", Alice asked her mother.',
+    "Alice was so tired when she got back home so she went",
+]
+device = torch.device("cuda")
 
 if __name__ == "__main__":
     wandb.init(
@@ -94,15 +101,19 @@ if __name__ == "__main__":
 
     encods_path = Path(f'encoded_stories_{config["sp_model_prefix"]}.npy')
     index_path = Path(f'index_{config["sp_model_prefix"]}.npy')
+    sp_model = SentencePieceProcessor(model_file=config["sp_model_prefix"] + ".model")
 
-    ds = TokenizedDataset(
-        config["sp_model_prefix"], config["max_length"], encods_path, index_path
+    train_ds = TokenizedDataset(
+        sp_model,
+        config["max_length"],
+        encods_path,
+        index_path,
+        train=True,
     )
-    collate_fn = Collator(ds.sp_model.pad_id())
-
-    loader = inf_loop(
+    collate_fn = Collator(sp_model.pad_id())
+    train_loader = inf_loop(
         DataLoader(
-            ds,
+            train_ds,
             config["batch_size"],
             shuffle=True,
             collate_fn=collate_fn,
@@ -110,6 +121,23 @@ if __name__ == "__main__":
             drop_last=True,
             pin_memory=True,
         )
+    )
+    train_loader = iter(train_loader)
+
+    val_ds = TokenizedDataset(
+        sp_model,
+        config["max_length"],
+        encods_path,
+        index_path,
+        train=False,
+    )
+    val_loader = DataLoader(
+        val_ds,
+        config["batch_size"],
+        collate_fn=collate_fn,
+        num_workers=8,
+        drop_last=True,
+        pin_memory=True,
     )
 
     criterion = nn.CrossEntropyLoss()
@@ -120,18 +148,18 @@ if __name__ == "__main__":
         weight_decay=config["weight_decay"],
     )
     scaler = torch.cuda.amp.GradScaler()
-    loader = iter(loader)
 
-    step = 1
+    step = 0
     model.train()
     for epoch in range(config["epochs"]):
         wandb.log({"epoch": epoch}, step=step)
         total_loss = 0
         total_grad = 0
         for batch_idx in tqdm(range(config["len_epoch"]), desc="train"):
+            step += 1
             optimizer.zero_grad(set_to_none=True)
             for accum_step in range(config["accumulation_steps"]):
-                batch = next(loader)
+                batch = next(train_loader)
                 src, tgt = batch["src"].to(device), batch["tgt"].to(device)
                 with torch.autocast(device_type="cuda", dtype=torch.float16):
                     with torch.backends.cuda.sdp_kernel(
@@ -151,14 +179,12 @@ if __name__ == "__main__":
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             total_grad += get_grad_norm(model)
-            # optimizer.step()
             scaler.step(optimizer)
             scaler.update()
 
             if (batch_idx + 1) % config["log_step"] == 0:
-                step = epoch * config["len_epoch"] + batch_idx + 1
                 wandb.log(
-                    {"loss": total_loss / config["log_step"]},
+                    {"train_loss": total_loss / config["log_step"]},
                     step=step,
                 )
                 total_loss = 0
@@ -168,14 +194,24 @@ if __name__ == "__main__":
                 )
                 total_grad = 0
 
-        step = (epoch + 1) * config["len_epoch"]
+        with torch.inference_mode():
+            total_loss = 0
+            for batch in tqdm(val_loader, desc="validation", total=len(val_loader)):
+                src, tgt = batch["src"].to(device), batch["tgt"].to(device)
+                output = model(src)
+                output_flat = output.view(-1, config["vocab_size"])
+                loss = criterion(output_flat, tgt.view(-1))
+                total_loss += loss
+        wandb.log(
+            {"val_loss": total_loss / len(val_loader)},
+            step=step,
+        )
+
         rows = {}
-        for idx, prompt in enumerate(
-            ["Hello", "Once upon a time there was", "In a land far far away"]
-        ):
+        for idx, prompt in enumerate(prompts):
             rows[idx] = {
                 "prompt": prompt,
-                "output": inference(model, ds.sp_model, prompt=prompt),
+                "output": inference(model, sp_model, prompt=prompt),
             }
         wandb.log(
             {
