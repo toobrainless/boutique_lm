@@ -1,14 +1,11 @@
 import math
 import os
-from tempfile import TemporaryDirectory
-from typing import Tuple
 
 import torch
 from torch import Tensor, nn
 from torch.distributions import Categorical
 from torch.nn import TransformerEncoder, TransformerEncoderLayer
 from torch.optim.lr_scheduler import _LRScheduler
-from torch.utils.data import dataset
 
 device = torch.device("cuda")
 

@@ -5,6 +5,7 @@ import pandas as pd
 import torch
 from sentencepiece import SentencePieceProcessor
 from torch import nn
+from torch.distributions import Categorical
 from torch.utils.data import DataLoader
 from tqdm import tqdm
 
@@ -38,8 +39,7 @@ def get_grad_norm(model, norm_type=2):
 
 @torch.inference_mode()
 def inference(model, sp_model, max_length=500, prompt="Once upon a time there was"):
-    from torch.distributions import Categorical
-
+    model.eval()
     device = model.device
 
     prompt = torch.tensor([[sp_model.bos_id()] + sp_model.encode(prompt)]).to(device)
@@ -68,7 +68,7 @@ config = {
     "log_step": 100,
     "accumulation_steps": 2,
     "project": "boutique_lm",
-    "name": "Medium model, 7.5kk parameters",
+    "name": "Medium model, 7.5kk parameters (fixed loss accumulation)",
     "save_period": 1,
 }
 config["sp_model_prefix"] = f"bpe_{config['vocab_size']}"
@@ -150,8 +150,8 @@ if __name__ == "__main__":
     scaler = torch.cuda.amp.GradScaler()
 
     step = 0
-    model.train()
     for epoch in range(config["epochs"]):
+        model.train()
         wandb.log({"epoch": epoch}, step=step)
         total_loss = 0
         total_grad = 0
@@ -174,8 +174,8 @@ if __name__ == "__main__":
                             / config["accumulation_steps"]
                         )
 
-                scaler.scale(loss).backward()
                 total_loss += loss.item()
+                scaler.scale(loss).backward()
             scaler.unscale_(optimizer)
             torch.nn.utils.clip_grad_norm_(model.parameters(), 0.5)
             total_grad += get_grad_norm(model)
@@ -195,6 +195,7 @@ if __name__ == "__main__":
                 total_grad = 0
 
         with torch.inference_mode():
+            model.eval()
             total_loss = 0
             for batch in tqdm(val_loader, desc="validation", total=len(val_loader)):
                 src, tgt = batch["src"].to(device), batch["tgt"].to(device)

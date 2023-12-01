@@ -167,16 +167,15 @@ if __name__ == "__main__":
         for file in tqdm(files, total=len(files), desc="Processing files"):
             with open(file, "r") as f:
                 data = json.load(f)
-                with open(merged_stories_path, "a") as f:
-                    stories_batch = []
-                    for story in data:
-                        stories_batch.append(story["story"].strip())
-                    encoded_stories_batch = sp.encode(stories_batch)
-                    for encoded_story in encoded_stories_batch:
-                        story_start = len(encoded_stories)
-                        encoded_stories.extend(encoded_story)
-                        story_end = len(encoded_stories)
-                        index.append([story_start, story_end])
+                stories_batch = []
+                for story in data:
+                    stories_batch.append(story["story"].strip())
+                encoded_stories_batch = sp.encode(stories_batch)
+                for encoded_story in encoded_stories_batch:
+                    story_start = len(encoded_stories)
+                    encoded_stories.extend(encoded_story)
+                    story_end = len(encoded_stories)
+                    index.append([story_start, story_end])
         encoded_stories = np.array(encoded_stories, dtype=np.int16)
         index = np.array(index, dtype=np.int32)
         print(f"{len(encoded_stories)=}")
