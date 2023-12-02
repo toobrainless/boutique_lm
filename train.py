@@ -55,27 +55,29 @@ def inference(model, sp_model, max_length=500, prompt="Once upon a time there wa
 
 @dataclasses.dataclass
 class Config:
-    # Tokenizer
+    # Dataset
+    batch_size: int = 768
+    max_length: int = 256
     vocab_size: int = 5000  # size of vocabulary
     sp_model_prefix: str = f"bpe_{vocab_size}"
 
     # Model
-    batch_size: int = 160
     d_hid: int = (
-        384  # dimension of the feedforward network model in ``nn.TransformerEncoder``
+        768  # dimension of the feedforward network model in ``nn.TransformerEncoder``
     )
-    dropout: int = 0.1  # dropout probability
-    emsize: int = 384  # embedding dimension
-    lr: int = 5e-4
-    max_length: int = 256
+    dropout: int = 0.0  # dropout probability
+    emsize: int = 768  # embedding dimension
     nhead: int = 16  # number of heads in ``nn.MultiheadAttention``
     nlayers: int = (
         4  # number of ``nn.TransformerEncoderLayer`` in ``nn.TransformerEncoder``
     )
+
+    # Optimizer
+    lr: int = 5e-4
     weight_decay: int = 0.1
 
     # Train
-    accumulation_steps: int = 2
+    accumulation_steps: int = 1
     epochs: int = 100
     len_epoch: int = 10000
     log_step: int = 100

@@ -51,6 +51,7 @@ class TransformerModel(nn.Module):
             nhead,
             d_hid,
             dropout,
+            activation="gelu",
             batch_first=True,
         )
         self.transformer_encoder = TransformerEncoder(
