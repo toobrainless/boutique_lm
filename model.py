@@ -177,7 +177,7 @@ class RMSNorm(nn.Module):
     def forward(self, x):
         norm_x = x.norm(2, dim=-1, keepdim=True)
 
-        rms_x = norm_x / torch.sqrt(self.d_model)
+        rms_x = norm_x / torch.sqrt(torch.tensor(self.d_model))
         x_normed = x / (rms_x + self.eps)
 
         return self.scale * x_normed
