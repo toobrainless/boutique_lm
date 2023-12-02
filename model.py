@@ -53,7 +53,9 @@ class TransformerModel(nn.Module):
             dropout,
             batch_first=True,
         )
-        self.transformer_encoder = TransformerEncoder(encoder_layers, nlayers)
+        self.transformer_encoder = TransformerEncoder(
+            encoder_layers, nlayers, norm=RMSNorm(d_model)
+        )
         self.embedding = nn.Embedding(ntoken, d_model)
         self.d_model = d_model
         self.linear = nn.Linear(d_model, ntoken)
@@ -158,16 +160,15 @@ class WarmUpScheduler(_LRScheduler):
 
 
 class RMSNorm(nn.Module):
-    def __init__(self, d_model, bias=False):
+    def __init__(self, d_model, eps=1e-5):
         """
         Root Mean Square Layer Normalization
         :param d_model: model size
         """
         super(RMSNorm, self).__init__()
 
-        self.eps = 1e-8
+        self.eps = eps
         self.d_model = d_model
-        self.bias = bias
 
         self.scale = nn.Parameter(torch.ones(d_model))
         self.register_parameter("scale", self.scale)
