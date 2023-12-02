@@ -155,3 +155,27 @@ class WarmUpScheduler(_LRScheduler):
             )
             for base_lr in self.base_lrs
         ]
+
+
+class RMSNorm(nn.Module):
+    def __init__(self, d_model, bias=False):
+        """
+        Root Mean Square Layer Normalization
+        :param d_model: model size
+        """
+        super(RMSNorm, self).__init__()
+
+        self.eps = 1e-8
+        self.d_model = d_model
+        self.bias = bias
+
+        self.scale = nn.Parameter(torch.ones(d_model))
+        self.register_parameter("scale", self.scale)
+
+    def forward(self, x):
+        norm_x = x.norm(2, dim=-1, keepdim=True)
+
+        rms_x = norm_x / torch.sqrt(self.d_model)
+        x_normed = x / (rms_x + self.eps)
+
+        return self.scale * x_normed

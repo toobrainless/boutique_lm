@@ -1,3 +1,4 @@
+import dataclasses
 from itertools import repeat
 from pathlib import Path
 
@@ -52,26 +53,39 @@ def inference(model, sp_model, max_length=500, prompt="Once upon a time there wa
     return sp_model.decode(prompt.squeeze().tolist())
 
 
-config = {
-    "vocab_size": 5000,  # size of vocabulary
-    "emsize": 384,  # embedding dimension
-    "d_hid": 384,  # dimension of the feedforward network model in ``nn.TransformerEncoder``
-    "nlayers": 4,  # number of ``nn.TransformerEncoderLayer`` in ``nn.TransformerEncoder``
-    "nhead": 16,  # number of heads in ``nn.MultiheadAttention``
-    "dropout": 0.1,  # dropout probability
-    "max_length": 512,
-    "batch_size": 160,
-    "lr": 5e-4,
-    "weight_decay": 0.1,
-    "epochs": 100,
-    "len_epoch": 10000,
-    "log_step": 100,
-    "accumulation_steps": 2,
-    "project": "boutique_lm",
-    "name": "Medium model, 7.5kk parameters (fixed loss accumulation)",
-    "save_period": 1,
-}
-config["sp_model_prefix"] = f"bpe_{config['vocab_size']}"
+@dataclasses.dataclass
+class Config:
+    # Tokenizer
+    vocab_size: int = 5000  # size of vocabulary
+    sp_model_prefix: str = f"bpe_{vocab_size}"
+
+    # Model
+    batch_size: int = 160
+    d_hid: int = (
+        384  # dimension of the feedforward network model in ``nn.TransformerEncoder``
+    )
+    dropout: int = 0.1  # dropout probability
+    emsize: int = 384  # embedding dimension
+    lr: int = 5e-4
+    max_length: int = 256
+    nhead: int = 16  # number of heads in ``nn.MultiheadAttention``
+    nlayers: int = (
+        4  # number of ``nn.TransformerEncoderLayer`` in ``nn.TransformerEncoder``
+    )
+    weight_decay: int = 0.1
+
+    # Train
+    accumulation_steps: int = 2
+    epochs: int = 100
+    len_epoch: int = 10000
+    log_step: int = 100
+    save_period: int = 1
+
+    # Wandb
+    name: str = "Medium model, 7.5kk parameters (fixed loss accumulation)"
+    project: str = "boutique_lm"
+
+
 prompts = [
     "Once upon a time there was",
     "In a land far far away",
@@ -82,6 +96,7 @@ prompts = [
 device = torch.device("cuda")
 
 if __name__ == "__main__":
+    config = dataclasses.asdict(Config())
     wandb.init(
         project=config["project"],
         name=config["name"],
@@ -140,7 +155,7 @@ if __name__ == "__main__":
         pin_memory=True,
     )
 
-    criterion = nn.CrossEntropyLoss()
+    criterion = nn.CrossEntropyLoss(ignore_index=sp_model.pad_id())
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=config["lr"],
