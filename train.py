@@ -39,14 +39,21 @@ def get_grad_norm(model, norm_type=2):
 
 
 @torch.inference_mode()
-def inference(model, sp_model, max_length=500, prompt="Once upon a time there was"):
+def inference(
+    model,
+    sp_model,
+    max_length=500,
+    prompt="Once upon a time there was",
+    top_k=10,
+):
     model.eval()
     device = model.device
 
     prompt = torch.tensor([[sp_model.bos_id()] + sp_model.encode(prompt)]).to(device)
     for _ in range(max_length):
         logits = model(prompt)[0, -1]
-        new_token = Categorical(logits=logits).sample().unsqueeze(0).unsqueeze(0)
+        probs, tokens = torch.topk(logits, top_k)
+        new_token = tokens[Categorical(logits=probs).sample()].unsqueeze(0).unsqueeze(0)
         if new_token.item() == sp_model.eos_id():
             break
         prompt = torch.cat([prompt, new_token], axis=1)
