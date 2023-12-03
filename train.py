@@ -72,6 +72,11 @@ class Config:
         4  # number of ``nn.TransformerEncoderLayer`` in ``nn.TransformerEncoder``
     )
 
+    # Checkpoints
+    checkpoint_path: str = (
+        "/home/toobrainless/boutique_lm/datasphere_exp/checkpoint_epoch6.pt"
+    )
+
     # Optimizer
     lr: int = 5e-4
     weight_decay: int = 0.1
@@ -84,7 +89,7 @@ class Config:
     save_period: int = 1
 
     # Wandb
-    name: str = "Medium model, 7.5kk parameters (fixed loss accumulation)"
+    name: str = "Continue of Big Model"
     project: str = "boutique_lm"
 
 
@@ -97,7 +102,8 @@ prompts = [
 ]
 device = torch.device("cuda")
 
-if __name__ == "__main__":
+
+def main():
     config = dataclasses.asdict(Config())
     wandb.init(
         project=config["project"],
@@ -113,6 +119,10 @@ if __name__ == "__main__":
         config["nlayers"],
         config["dropout"],
     ).to(device)
+
+    if config.get("checkpoint_path", None) is not None:
+        print("Checkpoint loading...")
+        print(model.load_state_dict(torch.load(config["checkpoint_path"])))
 
     print(f"{number_of_weights(model)=}")
 
@@ -184,7 +194,10 @@ if __name__ == "__main__":
                         enable_math=False,
                         enable_mem_efficient=False,
                     ):
-                        output = model(src)
+                        output = model(
+                            src,
+                            # src_key_padding_mask=(src == sp_model.pad_id()),
+                        )
                         output_flat = output.view(-1, config["vocab_size"])
                         loss = (
                             criterion(output_flat, tgt.view(-1))
@@ -242,3 +255,7 @@ if __name__ == "__main__":
 
         if (epoch + 1) % config["save_period"] == 0:
             torch.save(model.state_dict(), f"checkpoint_epoch{epoch}.pt")
+
+
+if __name__ == "__main__":
+    main()

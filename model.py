@@ -75,7 +75,9 @@ class TransformerModel(nn.Module):
         self.linear.bias.data.zero_()
         self.linear.weight.data.uniform_(-initrange, initrange)
 
-    def forward(self, src: Tensor, src_mask: Tensor = None) -> Tensor:
+    def forward(
+        self, src: Tensor, src_mask: Tensor = None, src_key_padding_mask: Tensor = None
+    ) -> Tensor:
         """
         Arguments:
             src: Tensor, shape ``[batch_size, seq_len]``
@@ -95,46 +97,14 @@ class TransformerModel(nn.Module):
                 .to(self.device)
                 .isinf()
             )
-        output = self.transformer_encoder(src, src_mask)
+        # Flash attention doesn't support padding_mask, so I have to comment that
+        output = self.transformer_encoder(
+            src,
+            mask=src_mask,
+            # src_key_padding_mask=src_key_padding_mask,
+        )
         output = self.linear(output)
         return output
-
-    @torch.inference_mode()
-    def inference(self, prefix: str = "", temp: float = 1.0) -> str:
-        """
-        Generate new text with an optional prefix
-        :param prefix: prefix to start generation
-        :param temp: sampling temperature
-        :return: generated text
-        """
-        self.eval()
-
-        indices = [self.dataset.bos_id] + self.dataset.text2ids(prefix)
-        indices = torch.tensor(indices).unsqueeze(0).to(next(self.parameters()).device)
-
-        embeds = self.embedding(indices)
-        output, hidden = self.rnn(embeds)
-        logits = self.linear(output) / temp
-
-        new_indexes = Categorical(logits=logits[:, -1:]).sample()
-        indices = torch.cat([indices, new_indexes], dim=1)
-
-        # print(f'{indices=}')
-        # print(f'{self.dataset.ids2text(indices)=}')
-
-        while indices.shape[1] < self.max_length:
-            if new_indexes.item() == self.dataset.eos_id:
-                break
-
-            embeds = self.embedding(indices)
-            logits = self.forward(embeds, hidden)
-
-            new_indexes = Categorical(logits=logits[:, -1:]).sample()
-            indices = torch.cat([indices, new_indexes], dim=1)
-            # print(f'{indices=}')
-            # print(f'{self.dataset.ids2text(indices)=}')
-
-        return self.dataset.ids2text(indices.squeeze()[1:])
 
 
 class WarmUpScheduler(_LRScheduler):
