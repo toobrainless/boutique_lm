@@ -41,22 +41,32 @@ class TransformerModel(nn.Module):
         nhead: int,
         d_hid: int,
         nlayers: int,
-        dropout: float = 0.5,
+        dropout: float = 0.0,
+        activation: str = "gelu",
+        encoder_norm_type: str = "rms",
     ):
         super().__init__()
         self.model_type = "Transformer"
         self.pos_encoder = PositionalEncoding(d_model, dropout)
+
         encoder_layers = TransformerEncoderLayer(
             d_model,
             nhead,
             d_hid,
             dropout,
-            activation="gelu",
+            activation=activation,
             batch_first=True,
         )
+
+        if encoder_norm_type == "rms":
+            encoder_norm = RMSNorm(d_model)
+        else:
+            encoder_norm = None
+            
         self.transformer_encoder = TransformerEncoder(
-            encoder_layers, nlayers, norm=RMSNorm(d_model)
+            encoder_layers, nlayers, norm=encoder_norm
         )
+
         self.embedding = nn.Embedding(ntoken, d_model)
         self.d_model = d_model
         self.linear = nn.Linear(d_model, ntoken)
