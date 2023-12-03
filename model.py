@@ -62,7 +62,7 @@ class TransformerModel(nn.Module):
             encoder_norm = RMSNorm(d_model)
         else:
             encoder_norm = None
-            
+
         self.transformer_encoder = TransformerEncoder(
             encoder_layers, nlayers, norm=encoder_norm
         )
@@ -111,7 +111,7 @@ class TransformerModel(nn.Module):
         output = self.transformer_encoder(
             src,
             mask=src_mask,
-            # src_key_padding_mask=src_key_padding_mask,
+            src_key_padding_mask=src_key_padding_mask,
         )
         output = self.linear(output)
         return output

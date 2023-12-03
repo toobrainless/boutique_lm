@@ -196,20 +196,20 @@ def main():
                 batch = next(train_loader)
                 src, tgt = batch["src"].to(device), batch["tgt"].to(device)
                 with torch.autocast(device_type="cuda", dtype=torch.float16):
-                    with torch.backends.cuda.sdp_kernel(
-                        enable_flash=True,
-                        enable_math=False,
-                        enable_mem_efficient=False,
-                    ):
-                        output = model(
-                            src,
-                            # src_key_padding_mask=(src == sp_model.pad_id()),
-                        )
-                        output_flat = output.view(-1, config["vocab_size"])
-                        loss = (
-                            criterion(output_flat, tgt.view(-1))
-                            / config["accumulation_steps"]
-                        )
+                    # with torch.backends.cuda.sdp_kernel(
+                    #     enable_flash=True,
+                    #     enable_math=False,
+                    #     enable_mem_efficient=False,
+                    # ):
+                    output = model(
+                        src,
+                        src_key_padding_mask=(src == sp_model.pad_id()),
+                    )
+                    output_flat = output.view(-1, config["vocab_size"])
+                    loss = (
+                        criterion(output_flat, tgt.view(-1))
+                        / config["accumulation_steps"]
+                    )
 
                 total_loss += loss.item()
                 scaler.scale(loss).backward()
