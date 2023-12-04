@@ -8,4 +8,4 @@ TinyStories_all_data*
 all_stories.txt
 *.pt
 * Model
-
+*.json
