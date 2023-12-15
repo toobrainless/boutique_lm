@@ -2,7 +2,6 @@ import argparse
 import json
 
 import language_tool_python
-from tqdm import tqdm
 
 
 def check_grammar(text):
@@ -25,9 +24,9 @@ if __name__ == "__main__":
 
     errors_per_word = 0
     generations = 0
-    for prompt_results in results:
+    for prompt_results in results[:-1]:
         for one_generation in results:
             generations += 1
-            errors_per_word += check_grammar(one_generation["splitted"])
+            errors_per_word += check_grammar(one_generation["generated_text"])
 
     print(f"Mean grammar errors per word: {errors_per_word / generations}")
